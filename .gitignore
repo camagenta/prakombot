@@ -1,0 +1,7 @@
+__pycache__/
+*.pyc
+.env
+*.session
+broadcast_log.json
+verifications.db
+venv/
