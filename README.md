@@ -5,24 +5,44 @@ Bot verifikasi otomatis untuk menyeleksi pending join request di group Telegram.
 ## Arsitektur
 
 ```
-Telethon (akun admin) ──DM──► User ──/verify──► Bot API
-     │                                                    │
-     │              ┌──────────────────────────────────────┘
-     │              │
-     │              ▼
-     │         6-step verification:
-     │         Nama → NIP → Instansi → Jenjang → Bukti → Submit
-     │              │
-     │              ▼
-     │         approve/decline join request
-     │              │
-     │              ▼
-     │         Admin notification
-     │
-     ▼
-  broadcast.py (rate-limited 10 DM/hari)
-  → Jalankan via cron job
+┌─── Real-time path (saat user request join) ────────────────────────┐
+│                                                                     │
+│  User ──request join──► Group ──ChatJoinRequest──► bot.py           │
+│                                              │                       │
+│                                              ▼                       │
+│                                  bot.py auto-DM (Bot API)            │
+│                                  dengan link verifikasi             │
+│                                              │                       │
+│  User ──klik link──► /verify                                       │
+│                                              │                       │
+│                                              ▼                       │
+│                                 6-step verification:                │
+│                                 Nama → NIP → Instansi →             │
+│                                 Jenjang → Bukti → Submit            │
+│                                              │                       │
+│                                              ▼                       │
+│                              approve/decline join request          │
+│                                              │                       │
+│                                              ▼                       │
+│                                     Admin notification              │
+└─────────────────────────────────────────────────────────────────────┘
+
+┌─── Catch-up path (untuk pending yang belum verify) ─────────────────┐
+│                                                                     │
+│  broadcast.py (cron job, daily)                                     │
+│       │                                                             │
+│       ├─► Bot API: getChatJoinRequests (ambil pending)              │
+│       │                                                             │
+│       └─► Telethon (akun admin): DM up to 10 user/hari              │
+│              dengan link verifikasi yang sama                       │
+└─────────────────────────────────────────────────────────────────────┘
 ```
+
+**Dual-DM behavior**: bot.py men-DM user secara real-time begitu mereka
+request join, sehingga pada praktiknya sebagian besar user tidak butuh
+catch-up broadcast. broadcast.py hanya perlu mengejar user yang request
+join SEBELUM bot.py sempat online (misal saat restart/maintenance), atau
+yang request join lalu mengabaikan DM pertama.
 
 ## Setup
 
@@ -137,7 +157,10 @@ prakombot/
 
 ## Estimate Timeline
 
-Dengan rate limit 10 DM/hari via Telethon:
-- 1500 pending users → ~150 hari (~5 bulan)
-- Bot jalan 24/7 untuk verifikasi real-time
-- Broadcast via cron tambah coverage
+- **Real-time (bot.py)**: instant — setiap join request yang masuk saat bot online akan langsung di-DM
+- **Catch-up (broadcast.py)**: 10 DM/hari via Telethon — mengejar pending yang terlewat
+- Worst case (bot offline lama + 1500 backlog): ~150 hari via broadcast saja
+- Realistic case (bot online 99% waktu): broadcast hanya mengejar sisanya, biasanya selesai dalam hitungan hari
+
+Broadcast juga otomatis me-retry user yang di-DM hari-hari sebelumnya
+tetapi belum menyelesaikan verifikasi (filter scope = hari ini saja).
