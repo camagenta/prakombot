@@ -218,7 +218,22 @@ async def confirm_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     cfg = Config()
     cfg.validate_bot()
 
-    # Save to DB
+    required_keys = ("nama", "nip", "instansi", "jenjang", "file_id")
+    missing = [k for k in required_keys if not data.get(k)]
+    if missing:
+        logger.info(
+            "confirm_handler called with missing user_data keys for user %d: %s. "
+            "Likely a re-entry (double-click) or stale conversation. Treating as no-op.",
+            user.id, missing,
+        )
+        try:
+            await query.edit_message_text(
+                "ℹ️ Sesi verifikasi ini sudah diproses. Ketik /verify untuk memulai ulang."
+            )
+        except Exception:
+            pass
+        return ConversationHandler.END
+
     try:
         verif_id = await save_verification(
             user_id=user.id,
@@ -235,7 +250,6 @@ async def confirm_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         context.user_data.clear()
         return ConversationHandler.END
 
-    # Approve join request
     approved = False
     try:
         await context.bot.approve_chat_join_request(
@@ -246,14 +260,7 @@ async def confirm_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         logger.info("✅ Join request approved for user %d", user.id)
     except Exception as exc:
         logger.warning("Failed to approve join for user %d: %s", user.id, exc)
-        try:
-            await context.bot.decline_chat_join_request(
-                chat_id=cfg.group_id, user_id=user.id
-            )
-            await update_status(verif_id, "rejected")
-            logger.info("Join request declined for user %d", user.id)
-        except Exception as inner_err:
-            logger.error("Failed to decline join for user %d: %s", user.id, inner_err)
+        await update_status(verif_id, "approval_failed")
 
     if approved:
         await query.edit_message_text(
@@ -269,7 +276,6 @@ async def confirm_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
             "Silakan hubungi admin untuk informasi lebih lanjut."
         )
 
-    # Forward to admins
     await _forward_to_admins(update, context, verif_id, approved)
     context.user_data.clear()
     return ConversationHandler.END
