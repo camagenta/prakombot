@@ -1,0 +1,18 @@
+[Unit]
+Description=Notifier webhook service (Google Form -> Telegram)
+After=network.target
+
+[Service]
+Type=simple
+User=notifier
+Group=notifier
+WorkingDirectory=/opt/prakombot/notifier
+EnvironmentFile=/etc/prakombot/notifier.env
+ExecStart=/opt/prakombot/notifier/.venv/bin/python -m notifier.main
+Restart=on-failure
+RestartSec=5s
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target
