@@ -111,6 +111,28 @@ def build_dm_text(bot_username: str) -> str:  # noqa: E501
     )
 
 
+# ── Batch selection ───────────────────────────────────────────────────────────
+
+
+def _filter_today_batch(
+    pending: list[dict[str, Any]],
+    log: list[dict[str, Any]],
+    today: str,
+) -> list[dict[str, Any]]:
+    """Return pending requests that should be DM'd today.
+
+    Skips users who already received a DM today (any status), to avoid
+    double-DM on the same day. Users DM'd on previous days are included
+    again so non-completers get re-contacted on later days.
+    """
+    sent_today_ids = {
+        e["user_id"]
+        for e in log
+        if e.get("date") == today
+    }
+    return [r for r in pending if r["user"]["id"] not in sent_today_ids]
+
+
 # ── Main broadcast ────────────────────────────────────────────────────────────
 
 
@@ -125,13 +147,13 @@ async def broadcast() -> None:
         logger.info("No pending join requests. Nothing to do.")
         return
 
-    # 2. Filter out already-processed users
+    # 2. Filter out users already DM'd today
     log = load_log()
-    sent_user_ids = {e["user_id"] for e in log if e.get("status") == "sent"}
-    to_send = [r for r in pending if r["user"]["id"] not in sent_user_ids]
+    today = date.today().isoformat()
+    to_send = _filter_today_batch(pending, log, today)
     skipped = len(pending) - len(to_send)
     if skipped:
-        logger.info("Skipping %d already-processed user(s).", skipped)
+        logger.info("Skipping %d already-DM'd-today user(s).", skipped)
 
     if not to_send:
         logger.info("All pending users already contacted today.")
