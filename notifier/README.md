@@ -3,6 +3,11 @@
 A small FastAPI service that receives Google Form submissions (via
 HMAC-signed webhook) and forwards them to a Telegram forum topic.
 
+**Production deployment:** systemd + nginx + Python venv (no Docker).
+Docker images are provided as an alternative but are not the default path.
+
+**Domain:** `pb.kotakpasir.my.id` (webhook at `/webhook/form`, health at `/healthz`)
+
 Phase 2 will add tools to manage the Telegram group (topics, members,
 messages, settings, auto-reply) — the service stubs are already in place.
 
@@ -41,53 +46,44 @@ messages, settings, auto-reply) — the service stubs are already in place.
 
 ## Setup
 
-### 1. Create a Telegram bot
-- Chat [@BotFather](https://t.me/BotFather) → `/newbot`
-- Save the **bot token**
-- Add the bot to your supergroup as an **admin** with "Manage Topics" permission
-- Create a forum topic for submissions, note its **message_thread_id**
-- Get the **chat_id** by calling `https://api.telegram.org/bot<token>/getUpdates`
+### 1. Gather Telegram config (you likely have this already)
+- **Bot token** — from BotFather, or copy from your existing GAS Script Properties
+- **Chat ID** — from `https://api.telegram.org/bot<token>/getUpdates` (look for `"chat":{"id":-100...}`)
+- **Thread ID** — the forum topic's `message_thread_id` (integer, e.g. `25`)
 
-### 2. Generate a shared secret
+If you already have these in your existing GAS, just reuse them.
+
+### 2. Generate a fresh `WEBHOOK_SECRET`
 ```bash
 openssl rand -hex 32
 ```
-Use this for both `WEBHOOK_SECRET` (notifier env) and the GAS Script Property.
+This is the HMAC key for the webhook. Must match what's set in GAS Script Properties.
 
-### 3. Get a domain + Cloudflare Origin CA cert
-- Point a domain (or subdomain) at your VPS
-- In Cloudflare dashboard: **SSL/TLS → Origin Server → Create Certificate**
-  - Save cert to `/etc/ssl/certs/cloudflare-origin.pem`
-  - Save private key to `/etc/ssl/private/cloudflare-origin.key`
-  - Cert is valid **15 years** — no renewal needed
+### 3. Get a Cloudflare Origin CA cert
+Domain `pb.kotakpasir.my.id` is already behind Cloudflare.
 
-### 4. Install the notifier service
+In Cloudflare dashboard: **SSL/TLS → Origin Server → Create Certificate**
+- Hostname: `pb.kotakpasir.my.id` (and optionally `*.kotakpasir.my.id` for future)
+- Save cert to VPS: `/etc/ssl/certs/cloudflare-origin.pem`
+- Save private key to VPS: `/etc/ssl/private/cloudflare-origin.key`
+- Cert is valid **15 years** — no renewal needed
+
+### 4. Install the notifier service on the VPS
 
 ```bash
-# On the VPS
-sudo useradd -r -s /bin/false notifier
-sudo mkdir -p /opt/prakombot/notifier
-sudo chown -R notifier:notifier /opt/prakombot
+# Create service user
+sudo useradd -r -s /usr/sbin/nologin --home-dir /opt/prakombot notifier
 
 # Deploy code
+sudo mkdir -p /opt/prakombot
+sudo chown -R notifier:notifier /opt/prakombot
 git clone https://github.com/camagenta/prakombot.git /opt/prakombot
 cd /opt/prakombot
 python3 -m venv .venv
 .venv/bin/pip install -r notifier/requirements.txt
 
-# Env file
-sudo tee /etc/prakombot/notifier.env > /dev/null <<'EOF'
-TELEGRAM_BOT_TOKEN=123456:ABC-DEF...
-TELEGRAM_CHAT_ID=-1001234567890
-TELEGRAM_THREAD_ID=25
-TELEGRAM_PARSE_MODE=HTML
-TELEGRAM_MAX_RETRIES=3
-TELEGRAM_RETRY_BASE_SECONDS=1
-WEBHOOK_SECRET=<32-byte hex from step 2>
-WEBHOOK_HOST=127.0.0.1
-WEBHOOK_PORT=8000
-EOF
-sudo chmod 600 /etc/prakombot/notifier.env
+# Write env file (interactive — generates fresh WEBHOOK_SECRET)
+sudo ./notifier/deploy/setup-prod.sh
 ```
 
 ### 5. Install nginx + systemd
@@ -108,10 +104,10 @@ sudo systemctl status form-bot
 ### 6. Install the GAS trigger
 
 1. Open your Google Form → **Extensions → Apps Script**
-2. Paste the contents of `notifier/gas/sendTele_v2.gs`
+2. Paste the contents of `notifier/gas/sendTele_v2.gs` (replace any old `sendTele.gs`)
 3. In **Project Settings → Script Properties**, add:
-   - `WEBHOOK_URL` = `https://your.domain.example/webhook/form`
-   - `WEBHOOK_SECRET` = same value as notifier env
+   - `WEBHOOK_URL` = `https://pb.kotakpasir.my.id/webhook/form`
+   - `WEBHOOK_SECRET` = the value `setup-prod.sh` printed at the end
 4. Run `installTrigger` once (authorize when prompted)
 5. Submit a test response to verify the topic message arrives
 
@@ -164,14 +160,14 @@ Receives a form submission.
 
 After deploy:
 ```bash
-# Health
-curl -fsS https://your.domain.example/healthz
+# Health (no auth)
+curl -fsS https://pb.kotakpasir.my.id/healthz
 # {"status":"ok"}
 
 # Webhook with valid signature
 BODY='{"form_id":"test","submitted_at":"2025-01-15T10:30:00Z","responses":[{"index":0,"title":"Nama","answer":"Budi"}]}'
 SIG=$(echo -n "$BODY" | openssl dgst -sha256 -hmac "$WEBHOOK_SECRET" | awk '{print $2}')
-curl -fsS -X POST https://your.domain.example/webhook/form \
+curl -fsS -X POST https://pb.kotakpasir.my.id/webhook/form \
   -H "Content-Type: application/json" \
   -H "X-Signature: $SIG" \
   --data "$BODY"
