@@ -5,8 +5,8 @@
  *   1. In your Google Form, open Extensions -> Apps Script
  *   2. Paste this file (rename Code.gs if needed)
  *   3. Set WEBHOOK_URL and WEBHOOK_SECRET in Project Settings -> Script Properties:
- *        WEBHOOK_URL   = https://your.domain.example/webhook/form
- *        WEBHOOK_SECRET = <32+ char random string; same as notifier env>
+ *        WEBHOOK_URL   = https://pb.kotakpasir.my.id/webhook/form
+ *        WEBHOOK_SECRET = <64 hex chars; output dari setup-prod.sh di VPS>
  *   4. Run `installTrigger()` once to register the onFormSubmit trigger
  *   5. Authorize the script (it needs UrlFetchApp + FormApp permissions)
  *

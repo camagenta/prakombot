@@ -90,7 +90,7 @@ prompt() {
 }
 
 validate_bot_token() {
-    [[ "$1" =~ ^[0-9]+:[A-Za-z0-9_-]{35}$ ]]
+    [[ "$1" =~ ^[0-9]+:[A-Za-z0-9_-]+$ ]] && [[ ${#1} -ge 30 ]]
 }
 validate_chat_id() {
     [[ "$1" =~ ^-[0-9]+$ ]]
@@ -177,12 +177,12 @@ echo "=== Next steps ==="
 echo "1. Copy WEBHOOK_SECRET above into GAS Script Properties (Project Settings -> Script Properties):"
 echo "     key=WEBHOOK_SECRET  value=<the secret above>"
 echo "2. Set WEBHOOK_URL in GAS Script Properties:"
-echo "     key=WEBHOOK_URL  value=https://your.domain.example/webhook/form"
+echo "     key=WEBHOOK_URL  value=https://pb.kotakpasir.my.id/webhook/form"
 echo "3. Reload systemd + start service:"
 echo "     sudo systemctl daemon-reload"
 echo "     sudo systemctl enable --now form-bot"
 echo "     sudo systemctl status form-bot"
 echo "4. Smoke test:"
-echo "     curl -fsS https://your.domain.example/healthz"
+echo "     curl -fsS https://pb.kotakpasir.my.id/healthz"
 echo
 echo "5. Rotate backup: keep ${BACKUP:-N/A} (no rotation needed if you trust the new file)"
