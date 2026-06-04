@@ -14,16 +14,11 @@ import unittest
 from unittest.mock import AsyncMock, MagicMock, patch
 
 
-REPO = "/Volumes/Pusdiklat BPS 4/Antigravity/prakombot"
-if REPO not in sys.path:
-    sys.path.insert(0, REPO)
-
-from tests.conftest import _make_module  # noqa: E401  (httpx mocked)
+from notifier.tests.conftest import _make_module
 
 
 class TestTelegramService(unittest.TestCase):
     def setUp(self):
-        import notifier.tests.conftest  # force-install httpx with HTTPError
         import notifier.services.telegram
         import importlib
         importlib.reload(notifier.services.telegram)
@@ -140,6 +135,24 @@ class TestTelegramService(unittest.TestCase):
             with self.assertRaises(self.tg.TelegramAPIError):
                 self._run(service.send_to_topic(chat_id=-1001, thread_id=25, text="x"))
             self.assertEqual(mock_client.post.await_count, 1)
+
+    def test_connection_error_triggers_retry_then_succeeds(self):
+        service = self.tg.TelegramService(bot_token="test-token", max_retries=3, retry_base_seconds=0)
+        with patch.object(self.tg.httpx, "AsyncClient") as mock_httpx:
+            mock_client = MagicMock()
+            mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+            mock_client.__aexit__ = AsyncMock(return_value=None)
+            conn_error = self.tg.httpx.HTTPError("connection refused")
+            mock_client.post = AsyncMock(side_effect=[
+                conn_error,
+                conn_error,
+                self._make_response(status_code=200),
+            ])
+            mock_httpx.return_value = mock_client
+
+            result = self._run(service.send_to_topic(chat_id=-1001, thread_id=25, text="x"))
+            self.assertEqual(result["message_id"], 42)
+            self.assertEqual(mock_client.post.await_count, 3)
 
     def test_max_retries_exhausted_raises(self):
         service = self.tg.TelegramService(bot_token="test-token", max_retries=2, retry_base_seconds=0)

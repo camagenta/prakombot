@@ -17,7 +17,7 @@ def main() -> int:
     try:
         cfg = Config()
         cfg.validate()
-    except ValueError as e:
+    except (ValueError, RuntimeError) as e:
         print(f"Config validation failed: {e}", file=sys.stderr)
         return 1
 

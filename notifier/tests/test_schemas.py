@@ -9,7 +9,7 @@ REPO = "/Volumes/Pusdiklat BPS 4/Antigravity/prakombot"
 if REPO not in sys.path:
     sys.path.insert(0, REPO)
 
-from tests.conftest import _make_module  # noqa: E401
+from notifier.tests.conftest import _make_module
 
 
 class TestFormSubmitPayload(unittest.TestCase):

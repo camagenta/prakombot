@@ -69,6 +69,10 @@ if "fastapi" not in sys.modules:
         setattr(fa_mod.status, code, code)
     sys.modules["fastapi.status"] = fa_mod.status
 
+if "fastapi.responses" not in sys.modules:
+    far_mod = _make_module("fastapi.responses")
+    far_mod.JSONResponse = MagicMock
+
 if "uvicorn" not in sys.modules:
     uvicorn_mod = _make_module("uvicorn")
     uvicorn_mod.run = MagicMock()

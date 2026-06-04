@@ -15,7 +15,7 @@ REPO = "/Volumes/Pusdiklat BPS 4/Antigravity/prakombot"
 if REPO not in sys.path:
     sys.path.insert(0, REPO)
 
-from tests.conftest import _make_module  # noqa: E401  (side-effect: sys.modules mocks)
+from notifier.tests.conftest import _make_module
 
 
 SECRET = "test-secret-key-1234567890abcdef"

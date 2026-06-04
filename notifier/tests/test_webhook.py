@@ -21,9 +21,7 @@ import unittest
 from unittest.mock import AsyncMock, MagicMock, patch
 
 
-REPO = "/Volumes/Pusdiklat BPS 4/Antigravity/prakombot"
-if REPO not in sys.path:
-    sys.path.insert(0, REPO)
+from notifier.tests.conftest import _make_module
 
 
 def _sign(body: bytes, secret: str) -> str:
@@ -51,7 +49,6 @@ def _valid_payload(form_id: str = "form-1") -> dict:
 
 class TestWebhookHappyPath(unittest.TestCase):
     def setUp(self):
-        import notifier.tests.conftest  # force-install httpx with HTTPError
         os.environ["WEBHOOK_SECRET"] = "test-secret"
         os.environ["TELEGRAM_BOT_TOKEN"] = "test-token"
         os.environ["TELEGRAM_CHAT_ID"] = "-1001"
@@ -164,7 +161,6 @@ class TestHealthEndpoint(unittest.TestCase):
 
 class TestConfigRegression(unittest.TestCase):
     def test_s9_env_change_does_not_break_subsequent_calls(self):
-        import notifier.tests.conftest  # force-install httpx mock
         from notifier.routes import webhook
         os.environ["WEBHOOK_SECRET"] = "secret-1"
         from notifier.config import Config
@@ -188,6 +184,63 @@ class TestConfigRegression(unittest.TestCase):
         self.assertEqual(r2["status"], 200)
 
         Config._reset_for_test()
+
+
+class TestHandleFormSubmitRoute(unittest.TestCase):
+    def setUp(self):
+        os.environ["WEBHOOK_SECRET"] = "test-secret"
+        os.environ["TELEGRAM_BOT_TOKEN"] = "test-token"
+        os.environ["TELEGRAM_CHAT_ID"] = "-1001"
+        from notifier.config import Config
+        Config._reset_for_test()
+
+    def tearDown(self):
+        for k in ("WEBHOOK_SECRET", "TELEGRAM_BOT_TOKEN", "TELEGRAM_CHAT_ID"):
+            os.environ.pop(k, None)
+        from notifier.config import Config
+        Config._reset_for_test()
+        if "notifier.services.telegram" in sys.modules:
+            mod = sys.modules["notifier.services.telegram"]
+            mod._default_service = None
+
+    def test_returns_200_for_valid_request(self):
+        from notifier.routes.webhook import handle_form_submit
+
+        body = json.dumps(_valid_payload()).encode()
+        sig = _sign(body, "test-secret")
+
+        fake_request = MagicMock()
+        fake_request.body = AsyncMock(return_value=body)
+
+        fake_tg = MagicMock()
+        fake_tg.send_to_topic = AsyncMock(return_value={"message_id": 99})
+        from notifier.services import telegram as tg_mod
+        tg_mod._default_service = fake_tg
+
+        result = _run(handle_form_submit(fake_request, x_signature=sig))
+        self.assertEqual(result.status_code, 200)
+        self.assertTrue(result.body.get("ok"))
+
+    def test_returns_401_for_missing_signature(self):
+        from notifier.routes.webhook import handle_form_submit
+
+        body = json.dumps(_valid_payload()).encode()
+        fake_request = MagicMock()
+        fake_request.body = AsyncMock(return_value=body)
+
+        result = _run(handle_form_submit(fake_request, x_signature=None))
+        self.assertEqual(result.status_code, 401)
+
+    def test_returns_422_for_malformed_body(self):
+        from notifier.routes.webhook import handle_form_submit
+
+        body = b"not json"
+        sig = _sign(body, "test-secret")
+        fake_request = MagicMock()
+        fake_request.body = AsyncMock(return_value=body)
+
+        result = _run(handle_form_submit(fake_request, x_signature=sig))
+        self.assertEqual(result.status_code, 422)
 
 
 if __name__ == "__main__":
